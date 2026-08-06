@@ -1,3 +1,4 @@
+
 # ==========================================================
 # PROPIEDAD PRIVADA Y EXCLUSIVA DE VÍCTOR M. RIVERA
 # SISTEMA SNIPER - MOTOR PRO-BLINDADO V18.1 (INTERFAZ EXCLUSIVA MÓVIL)
@@ -12,16 +13,69 @@ import itertools
 import os
 import random
 import webbrowser
-from flask import Flask, jsonify, render_template_string, request
+from flask import Flask, jsonify, render_template_string, request, redirect, url_for, session
 import numpy as np
 import pandas as pd
 
 app = Flask(__name__)
+app.secret_key = "sniper_v18_secret_key_pro_victor_rivera" # Llave para el control de sesiones
+
+# ==========================================
+# 🔑 PINES AUTORIZADOS PARA SUSCRIPTORES
+# ==========================================
+PINES_VALIDOS = [
+    "VIC-101",
+    "VIC-102",
+    "VIC-103",
+    "VIC-104",
+    "VIC-105",
+    "VIP-2026",
+    "DEMO-777"
+]
 
 # ==========================================
 # CONFIGURACIÓN DE FECHA REAL DE TU CSV
 # ==========================================
 FECHA_ULTIMO_SORTEO = "2026-08-03" 
+
+# ==========================================
+# PLANTILLA HTML PARA PANTALLA DE ACCESO (PIN)
+# ==========================================
+HTML_LOGIN = """
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Acceso Privado | Sniper V18.1</title>
+    <style>
+        body { background-color: #05070a; color: #f0f6fc; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 15px; box-sizing: border-box; }
+        .card { background-color: #0d1117; padding: 25px; border-radius: 16px; border: 1px solid #30363d; width: 100%; max-width: 380px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.8); }
+        h1 { color: #38bdf8; font-size: 20px; margin-bottom: 6px; font-weight: 800; }
+        p { color: #8b949e; font-size: 13px; margin-bottom: 20px; }
+        input[type="text"] { width: 100%; padding: 14px; margin-bottom: 14px; border-radius: 8px; border: 1px solid #30363d; background-color: #161b22; color: #fff; font-size: 16px; text-align: center; letter-spacing: 2px; box-sizing: border-box; text-transform: uppercase; font-weight: bold; }
+        button { width: 100%; padding: 14px; border-radius: 8px; border: none; background-color: #00e676; color: #000; font-size: 15px; font-weight: 900; cursor: pointer; transition: 0.2s; box-shadow: 0 4px 15px rgba(0,230,118,0.3); }
+        button:hover { background-color: #00c853; }
+        .error { color: #ef4444; font-size: 12px; margin-top: 12px; font-weight: bold; }
+        .firma { font-size: 11px; margin-top: 20px; background: linear-gradient(90deg, #38bdf8, #f43f5e, #facc15); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>🔒 COMUNIDAD VIP</h1>
+        <p>Ingresa tu PIN de suscriptor asignado</p>
+        <form method="POST" action="/login">
+            <input type="text" name="pin" placeholder="EJ: VIC-101" required autocomplete="off">
+            <button type="submit">INGRESAR AL SISTEMA</button>
+        </form>
+        {% if error %}
+            <div class="error">{{ error }}</div>
+        {% endif %}
+        <div class="firma">Propiedad Sniper 🐍 Víctor M. Rivera</div>
+    </div>
+</body>
+</html>
+"""
 
 # ==========================================
 # PLANTILLA VISUAL MÓVIL EXCLUSIVA (DISEÑO VERTICAL MÓVIL)
@@ -255,12 +309,14 @@ HTML_TEMPLATE = """
             background-color: var(--accent-blue) !important;
             color: #000000 !important;
         }
+        .logout-link { display: block; text-align: right; font-size: 11px; color: #8b949e; text-decoration: none; margin-bottom: 8px; }
     </style>
 </head>
 <body>
 
     <!-- MARCO CENTRAL MÓVIL -->
     <div class="mobile-shell">
+        <a href="/logout" class="logout-link">🔒 Cerrar Sesión VIP</a>
         
         <!-- ENCABEZADO DESTACADO DE VERIFICACIÓN -->
         <div class="mobile-header">
@@ -737,10 +793,33 @@ def calcular_auditoria_metricas_reales(jugadas_sniper, df_completo):
     return td5, tc4, tt3, detalles
 
 # ==========================================
-# ENDPOINT TARJETA VIP
+# RUTAS DE AUTENTICACIÓN (PIN PROTECTOR)
+# ==========================================
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    error = None
+    if request.method == 'POST':
+        pin_ingresado = request.form.get('pin', '').strip().upper()
+        if pin_ingresado in PINES_VALIDOS:
+            session['autenticado'] = True
+            return redirect(url_for('index'))
+        else:
+            error = "❌ PIN de acceso incorrecto o expirado."
+    return render_template_string(HTML_LOGIN, error=error)
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
+
+# ==========================================
+# ENDPOINT TARJETA VIP (PROTEGIDO)
 # ==========================================
 @app.route("/tarjeta_vip")
 def tarjeta_vip():
+    if not session.get('autenticado'):
+        return redirect(url_for('login'))
+        
     filtro_juego = request.args.get("filtro_juego", "TODOS")
     ruta = "tris_historial.csv"
     ultimos, verif, total, df, top3_15, df_completo = obtener_datos_analisis(ruta, filtro_juego)
@@ -751,10 +830,13 @@ def tarjeta_vip():
     return render_template_string(TARJETA_VIP_TEMPLATE, filtro_juego=filtro_juego, fija_1=jugadas_sniper[0][1], fija_2=jugadas_sniper[1][1], filas_tarjeta=filas_tarjeta)
 
 # ==========================================
-# ENDPOINT PRINCIPAL (PUERTO 5000 INDEPENDIENTE)
+# ENDPOINT PRINCIPAL (PROTEGIDO POR PIN)
 # ==========================================
 @app.route("/")
 def index():
+    if not session.get('autenticado'):
+        return redirect(url_for('login'))
+
     modo = request.args.get("modo", "Hibrido")
     vista = request.args.get("vista", "panel")
     sub_vista = request.args.get("sub_vista", "cadena_fam")
@@ -788,7 +870,6 @@ def index():
     
     cadena_datos = []; filas_procesadas = []
     juegos_ciclo = ["CLASICO", "SIETE", "EXTRA", "DE LAS TRES", "MEDIODIA"]
-    DIAS_SEMANA = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
     try: fecha_referencia_base = datetime.strptime(FECHA_ULTIMO_SORTEO, "%Y-%m-%d")
     except: fecha_referencia_base = datetime(2026, 8, 3)
 
@@ -828,9 +909,5 @@ def index():
     )
 
 if __name__ == "__main__":
-    try:
-        webbrowser.open("http://127.0.0.1:5000/")
-    except:
-        pass
-        
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host="0.0.0.0", port=port, debug=False)
